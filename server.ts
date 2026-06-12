@@ -402,10 +402,28 @@ app.get('/api/bing-image', async (req, res) => {
 app.get('/api/unsplash-image', async (req, res) => {
   try {
     const tags = req.query.tags || 'nature';
-    // Using loremflickr as fallback proxy for generic tagged photos if Unsplash source is blocking
-    // but primarily try a similar random resolution format. Unsplash Source is deprecated but browsers cache random redirects.
-    // For reliable tag results without an API key, fallback to loremflickr.
-    const url = `https://loremflickr.com/1920/1080/${encodeURIComponent(tags as string)}?lock=${Math.floor(Math.random() * 1000)}`;
+    
+    // If the user has configured an Unsplash API key, use it for genuine 4K tag-based photos
+    if (process.env.UNSPLASH_ACCESS_KEY) {
+      const response = await fetch(`https://api.unsplash.com/photos/random?query=${encodeURIComponent(tags as string)}&orientation=landscape`, {
+        headers: {
+          'Authorization': `Client-ID ${process.env.UNSPLASH_ACCESS_KEY}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.urls && data.urls.full) {
+           res.json({ url: data.urls.full });
+           return;
+        }
+      }
+    }
+
+    // Fallback if no API key is provided, or if the API key fails
+    // loremflickr has issues with extreme resolutions (padding with red backgrounds)
+    // picsum provides excellent 4k photos, we use the tag string as a consistent seed
+    const seed = encodeURIComponent(tags as string).replace(/[^a-zA-Z0-9]/g, '');
+    const url = `https://picsum.photos/seed/${seed}/3840/2160`;
     res.json({ url });
   } catch (error) {
     res.status(500).json({ error: 'Failed to proxy Unsplash image' });
