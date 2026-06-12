@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Sector",
+  "description": "Sector is project management workspace system for agents and humans in style of a Kanban board.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
