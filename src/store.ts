@@ -14,6 +14,12 @@ interface AppState {
   columns: ColumnDef[];
   isInitialized: boolean;
   selectedTaskId: string | null;
+  isCreatingNewTask: boolean;
+  setIsCreatingNewTask: (val: boolean) => void;
+  newTaskDefaultColumn: string | null;
+  setNewTaskDefaultColumn: (val: string | null) => void;
+  newTaskDefaultPosition: 'top' | 'bottom';
+  setNewTaskDefaultPosition: (val: 'top' | 'bottom') => void;
   theme: 'light' | 'dark';
   themeColor: string;
   defaultSortColumn: string | null;
@@ -237,6 +243,19 @@ export const useStore = create<AppState>((set, get) => ({
   columns: DEFAULT_COLUMNS,
   isInitialized: false,
   selectedTaskId: null,
+  isCreatingNewTask: false,
+  setIsCreatingNewTask: (val) => set({ isCreatingNewTask: val }),
+  newTaskDefaultColumn: localStorage.getItem('kanban-new-task-column'),
+  setNewTaskDefaultColumn: (val) => {
+    if (val) localStorage.setItem('kanban-new-task-column', val);
+    else localStorage.removeItem('kanban-new-task-column');
+    set({ newTaskDefaultColumn: val });
+  },
+  newTaskDefaultPosition: (localStorage.getItem('kanban-new-task-position') as 'top' | 'bottom') || 'bottom',
+  setNewTaskDefaultPosition: (val) => {
+    localStorage.setItem('kanban-new-task-position', val);
+    set({ newTaskDefaultPosition: val });
+  },
   theme: (localStorage.getItem('kanban-theme') as 'light' | 'dark') || 'light',
   themeColor: '#69D94A',
   defaultSortColumn: null,
@@ -814,16 +833,31 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   createTask: async (title = "New Task", incomingStatus?: string) => {
-    const { loadTasks, setSelectedTaskId, defaultSortColumn, columns } = get();
+    const { loadTasks, setSelectedTaskId, defaultSortColumn, columns, newTaskDefaultColumn, newTaskDefaultPosition, tasks, setIsCreatingNewTask } = get();
     
     let status = incomingStatus;
     if (!status) {
-      if (defaultSortColumn) {
+      if (newTaskDefaultColumn && columns.some(c => c.id === newTaskDefaultColumn)) {
+        status = newTaskDefaultColumn;
+      } else if (defaultSortColumn) {
         status = defaultSortColumn;
       } else if (columns.length > 0) {
         status = columns[0].id;
       } else {
         status = "To Do"; // Fallback
+      }
+    }
+
+    const tasksInColumn = tasks.filter(t => t.status === status);
+    let order = Date.now();
+    
+    if (tasksInColumn.length > 0) {
+      if (newTaskDefaultPosition === 'top') {
+        const minOrder = Math.min(...tasksInColumn.map(t => t.order || 0));
+        order = minOrder - 1000;
+      } else {
+        const maxOrder = Math.max(...tasksInColumn.map(t => t.order || 0));
+        order = maxOrder + 1000;
       }
     }
 
@@ -833,7 +867,7 @@ export const useStore = create<AppState>((set, get) => ({
       title,
       status,
       tags: [],
-      order: Date.now()
+      order
     };
     
     const newContent = matter.stringify("", initialData);
@@ -845,6 +879,7 @@ export const useStore = create<AppState>((set, get) => ({
     });
     
     await loadTasks();
+    setIsCreatingNewTask(true);
     setSelectedTaskId(id);
   },
 

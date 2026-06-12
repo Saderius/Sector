@@ -88,8 +88,18 @@ export default function App() {
       }
     };
 
+    const handleCustomEvents = (e: Event) => {
+      if (e.type === 'open-create-workspace') {
+        setIsCreateModalOpen(true);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('open-create-workspace', handleCustomEvents);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('open-create-workspace', handleCustomEvents);
+    };
   }, [createTask]);
 
   useMaterialTheme();

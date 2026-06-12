@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../store';
 import { Button } from './ui/button';
-import { Search, Hash, FileText, Archive, CornerDownLeft, X, Columns } from 'lucide-react';
+import { Search, Hash, FileText, Archive, CornerDownLeft, X, Columns, Plus, FolderOpen } from 'lucide-react';
 import { Task } from '../types';
 
 interface SearchResult {
@@ -46,11 +46,32 @@ function getSnippet(content: string, query: string) {
 }
 
 export function CommandPalette() {
-  const { tasks, archivedTasks, trashedTasks, setSelectedTaskId } = useStore();
+  const { tasks, archivedTasks, trashedTasks, setSelectedTaskId, createTask } = useStore();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<'all' | 'titles' | 'descriptions' | 'tags' | 'archived' | 'trashed'>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const AVAILABLE_ACTIONS = useMemo(() => [
+    {
+      id: 'create-note',
+      title: 'Create Note...',
+      description: 'Add a new blank note to your current view.',
+      icon: <Plus className="w-4 h-4 text-emerald-500" />
+    },
+    {
+      id: 'add-workspace',
+      title: 'Add New Workspace...',
+      description: 'Create or import an external Markdown workspace.',
+      icon: <FolderOpen className="w-4 h-4 text-blue-500" />
+    },
+    {
+      id: 'open-files',
+      title: 'Open Project Files Folder',
+      description: 'Locate the underlying Markdown storage directory.',
+      icon: <Search className="w-4 h-4 text-violet-500" />
+    }
+  ], []);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -58,8 +79,27 @@ export function CommandPalette() {
 
   // Real-time filtering and highlighting logic
   const filteredResults = useMemo(() => {
-    const results: SearchResult[] = [];
+    const results: any[] = [];
     const searchVal = query.trim().toLowerCase();
+
+    // Include quick actions
+    if (scope === 'all') {
+      const actionMatches = AVAILABLE_ACTIONS.filter(action => 
+        !searchVal || 
+        action.title.toLowerCase().includes(searchVal) || 
+        action.description.toLowerCase().includes(searchVal)
+      );
+
+      for (const action of actionMatches) {
+        results.push({
+          type: 'action',
+          action,
+          isArchived: false,
+          isTrashed: false,
+          matchType: 'action'
+        });
+      }
+    }
 
     // Collect all tasks to evaluate
     const activeList = tasks.map(t => ({ task: t, isArchived: false, isTrashed: false }));
@@ -76,7 +116,6 @@ export function CommandPalette() {
       if (scope === 'trashed' && !isTrashed) continue;
       // If we are searching other scopes, filter out archived/trashed unless in "all" or explicitly chosen scope
       if (scope !== 'all' && scope !== 'archived' && scope !== 'trashed' && (isArchived || isTrashed)) continue;
-      // Even in 'all', we might want to exclude 'trashed' unless actively requested, but let's include it for true global search
 
       const titleMatch = task.title?.toLowerCase().includes(searchVal);
       const contentMatch = task.content?.toLowerCase().includes(searchVal);
@@ -85,6 +124,7 @@ export function CommandPalette() {
       // No query? Return all sorted by order unless scoped
       if (!searchVal) {
         results.push({
+          type: 'task',
           task,
           isArchived,
           isTrashed,
@@ -95,23 +135,29 @@ export function CommandPalette() {
 
       if (scope === 'all' || scope === 'archived' || scope === 'trashed') {
         if (titleMatch) {
-          results.push({ task, isArchived, isTrashed, matchType: 'title' });
+          results.push({ type: 'task', task, isArchived, isTrashed, matchType: 'title' });
         } else if (tagMatch) {
-          results.push({ task, isArchived, isTrashed, matchType: 'tag' });
+          results.push({ type: 'task', task, isArchived, isTrashed, matchType: 'tag' });
         } else if (contentMatch) {
-          results.push({ task, isArchived, isTrashed, matchType: 'content' });
+          results.push({ type: 'task', task, isArchived, isTrashed, matchType: 'content' });
         }
       } else if (scope === 'titles' && titleMatch) {
-        results.push({ task, isArchived, isTrashed, matchType: 'title' });
+        results.push({ type: 'task', task, isArchived, isTrashed, matchType: 'title' });
       } else if (scope === 'descriptions' && contentMatch) {
-        results.push({ task, isArchived, isTrashed, matchType: 'content' });
+        results.push({ type: 'task', task, isArchived, isTrashed, matchType: 'content' });
       } else if (scope === 'tags' && tagMatch) {
-        results.push({ task, isArchived, isTrashed, matchType: 'tag' });
+        results.push({ type: 'task', task, isArchived, isTrashed, matchType: 'tag' });
       }
     }
 
     // Sort results to prioritize exact titles, active tasks, then orders
     return results.sort((a, b) => {
+      // Prioritize actions above all else when partially matching
+      if (searchVal) {
+        if (a.type === 'action' && b.type !== 'action') return -1;
+        if (a.type !== 'action' && b.type === 'action') return 1;
+      }
+      
       // 1. Prioritize active tasks over archived/trashed
       const aIsInactive = a.isArchived || a.isTrashed;
       const bIsInactive = b.isArchived || b.isTrashed;
@@ -120,17 +166,34 @@ export function CommandPalette() {
       }
       // 2. Prioritize matches in title
       if (a.matchType !== b.matchType) {
-        if (a.matchType === 'title') return -1;
-        if (b.matchType === 'title') return 1;
+        if (a.matchType === 'title' || a.matchType === 'action') return -1;
+        if (b.matchType === 'title' || b.matchType === 'action') return 1;
       }
       // 3. Fallback to order
-      return (a.task.order || 0) - (b.task.order || 0);
+      return (a.task?.order || 0) - (b.task?.order || 0);
     });
-  }, [query, scope, tasks, archivedTasks, trashedTasks]);
+  }, [query, scope, tasks, archivedTasks, trashedTasks, AVAILABLE_ACTIONS]);
 
-  // Keyboard listeners for Double Shift, CMD+K / CTRL+K
+  // Keyboard listeners for Double Shift, CMD+K / CTRL+K, and any typing
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore keypresses inside form inputs if the modal isn't open yet
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+
+      // Type any character to immediately pop up anysearch
+      if (!isInput && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (!isOpen) {
+          e.preventDefault();
+          setIsOpen(true);
+          setQuery(e.key);
+        } else {
+          // If it is open but somehow the input hasn't focused yet, append it manually
+          setQuery(prev => prev + e.key);
+        }
+        return;
+      }
+
       // Toggle palette on Cmd/Ctrl + K
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -189,11 +252,14 @@ export function CommandPalette() {
   // Autofocus input when opened
   useEffect(() => {
     if (isOpen) {
-      setQuery('');
       setSelectedIndex(0);
       setTimeout(() => {
         inputRef.current?.focus();
       }, 80);
+    } else {
+      setTimeout(() => {
+        setQuery('');
+      }, 200); // Clear after fade out
     }
   }, [isOpen]);
 
@@ -202,7 +268,19 @@ export function CommandPalette() {
     setSelectedIndex(0);
   }, [scope, query]);
 
-  const handleSelect = (result: SearchResult) => {
+  const handleSelect = (result: any) => {
+    if (result.type === 'action') {
+      const actionId = result.action.id;
+      if (actionId === 'create-note') {
+        createTask();
+      } else if (actionId === 'add-workspace') {
+        window.dispatchEvent(new CustomEvent('open-create-workspace'));
+      } else if (actionId === 'open-files') {
+        alert('To view project files directly, navigate your OS to your workspace directory or use the Electron app desktop version.');
+      }
+      setIsOpen(false);
+      return;
+    }
     setSelectedTaskId(result.task.id);
     setIsOpen(false);
   };
@@ -299,6 +377,44 @@ export function CommandPalette() {
                     <div className="space-y-1">
                       {filteredResults.map((result, index) => {
                         const isSelected = index === selectedIndex;
+                        
+                        if (result.type === 'action') {
+                          return (
+                            <div
+                              key={result.action.id}
+                              onClick={() => handleSelect(result)}
+                              onMouseEnter={() => setSelectedIndex(index)}
+                              className={`flex flex-col p-3 rounded-xl cursor-pointer select-none border transition-all duration-150 relative ${
+                                isSelected
+                                  ? 'bg-indigo-50/70 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800/80 shadow-3xs'
+                                  : 'bg-transparent border-transparent hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`w-8 h-8 flex items-center justify-center rounded-lg shadow-sm border ${isSelected ? 'bg-white border-indigo-100 dark:bg-slate-800 dark:border-indigo-500/30' : 'bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+                                    {result.action.icon}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-semibold text-sm text-slate-800 dark:text-slate-150 truncate leading-tight">
+                                      <HighlightText text={result.action.title} query={query} />
+                                    </h4>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                                      <HighlightText text={result.action.description} query={query} />
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-indigo-500 dark:text-indigo-400 font-medium hidden sm:flex items-center gap-1 p-0.5 rounded">
+                                  <span>Run Action</span>
+                                  <CornerDownLeft className="w-3 h-3" />
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+
                         const hasMarkdownContent = !!result.task.content && result.task.content.trim() !== '';
                         const snippet = getSnippet(result.task.content || '', query);
                         

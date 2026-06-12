@@ -1,11 +1,11 @@
 import * as Diff from 'diff';
 import MDEditor from '@uiw/react-md-editor';
 import { useStore } from '../store';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
+import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { TaskStatus } from '../types';
 import { FileText, Sparkles, Bold, Italic, List, ListOrdered, X } from 'lucide-react';
@@ -105,7 +105,14 @@ export function TaskEditorSheet() {
     untrashTask,
     deleteTask, 
     theme, 
-    resolvePendingChanges 
+    resolvePendingChanges,
+    columns,
+    isCreatingNewTask,
+    setIsCreatingNewTask,
+    newTaskDefaultColumn,
+    setNewTaskDefaultColumn,
+    newTaskDefaultPosition,
+    setNewTaskDefaultPosition
   } = useStore();
   
   const task = tasks.find(t => t.id === selectedTaskId) || archivedTasks.find(t => t.id === selectedTaskId) || trashedTasks.find(t => t.id === selectedTaskId);
@@ -119,9 +126,62 @@ export function TaskEditorSheet() {
   const [editorMode, setEditorMode] = useState<'markdown' | 'wysiwyg'>('markdown');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
-  const [width, setWidth] = useState(672); // max-w-2xl default
+  const [editorHeight, setEditorHeight] = useState(() => {
+    const saved = localStorage.getItem('task_editor_height');
+    return saved ? parseInt(saved, 10) : 380;
+  });
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  const latestHeightRef = useRef(editorHeight);
+
+  useEffect(() => {
+    if (!editorContainerRef.current) return;
+    
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const newHeight = entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height;
+        if (newHeight < 100) continue; // Ignore zero or collapsed heights during unmount
+        
+        const newHeightStr = Math.round(newHeight);
+        latestHeightRef.current = newHeightStr;
+        
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          localStorage.setItem('task_editor_height', newHeightStr.toString());
+          setEditorHeight(newHeightStr);
+        }, 500);
+      }
+    });
+
+    observer.observe(editorContainerRef.current);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(debounceTimer);
+      // Synchronously save any pending height changes on unmount/close
+      if (latestHeightRef.current) {
+        localStorage.setItem('task_editor_height', latestHeightRef.current.toString());
+        setEditorHeight(latestHeightRef.current);
+      }
+    };
+  }, [selectedTaskId]);
+
+  const [width, setWidth] = useState(() => {
+    const saved = localStorage.getItem('task_editor_width');
+    return saved ? parseInt(saved, 10) : 800;
+  }); // max-w-3xl default
   const isResizing = useRef(false);
+  const dragStartX = useRef(0);
+  const startWidth = useRef(0);
   const wysiwygRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      localStorage.setItem('task_editor_width', width.toString());
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [width]);
 
   const allExistingTags = useMemo(() => {
     const set = new Set<string>();
@@ -217,8 +277,10 @@ export function TaskEditorSheet() {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing.current) return;
-      const newWidth = window.innerWidth - e.clientX;
-      setWidth(Math.max(400, Math.min(newWidth, window.innerWidth - 100)));
+      // Times 2 because the modal is centered, so stretching right adds to both sides
+      const deltaX = (e.clientX - dragStartX.current) * 2;
+      const newWidth = Math.max(400, Math.min(startWidth.current + deltaX, window.innerWidth - 64));
+      setWidth(newWidth);
     };
     
     const handleMouseUp = () => {
@@ -240,6 +302,7 @@ export function TaskEditorSheet() {
       updateTask(task.id, { title, content, tags });
     }
     setSelectedTaskId(null);
+    setTimeout(() => setIsCreatingNewTask(false), 200);
   };
 
   const addTag = (e: React.KeyboardEvent) => {
@@ -286,30 +349,37 @@ export function TaskEditorSheet() {
   };
 
   return (
-    <Sheet open={!!selectedTaskId} onOpenChange={(open) => !open && handleClose()}>
-      <SheetContent 
-        className="w-full flex flex-col h-full bg-white/70 dark:bg-slate-900/80 backdrop-blur-3xl border-l border-white/50 dark:border-slate-700 shadow-2xl overflow-hidden p-0 sm:max-w-none transition-none"
-        style={{ maxWidth: `${width}px` }}
-      >
-        <div 
-          className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-blue-500/20 active:bg-blue-500/40 transition-colors"
-          onMouseDown={() => {
-            isResizing.current = true;
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-          }}
-        />
-        
-        {task?.pendingExternalChanges ? (
-          <>
-            <div className="p-6 border-b border-amber-400/40 bg-amber-50 dark:bg-amber-950/30 flex-shrink-0 transition-colors">
-              <SheetHeader>
-                <SheetTitle className="text-amber-800 dark:text-amber-200">External Updates Pending</SheetTitle>
-                <SheetDescription className="text-amber-700 dark:text-amber-400">
-                  An agent or external process modified this file while you were working. Accept or discard their changes to proceed.
-                </SheetDescription>
-              </SheetHeader>
-            </div>
+    <AnimatePresence>
+      {!!selectedTaskId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={handleClose} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 15 }}
+            className="relative w-full bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden rounded-2xl flex flex-col pointer-events-auto max-h-[90vh]"
+            style={{ width: `${width}px` }}
+          >
+            <div 
+              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize z-50 hover:bg-blue-500/20 active:bg-blue-500/40 transition-colors"
+              onMouseDown={(e) => {
+                isResizing.current = true;
+                dragStartX.current = e.clientX;
+                startWidth.current = width;
+                document.body.style.cursor = 'ew-resize';
+                document.body.style.userSelect = 'none';
+              }}
+            />
+            {task?.pendingExternalChanges ? (
+              <>
+                <div className="p-6 border-b border-amber-400/40 bg-amber-50 dark:bg-amber-950/30 flex-shrink-0 transition-colors">
+                  <div>
+                    <h2 className="text-lg font-semibold text-amber-800 dark:text-amber-200">External Updates Pending</h2>
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      An agent or external process modified this file while you were working. Accept or discard their changes to proceed.
+                    </p>
+                  </div>
+                </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
                <div className="space-y-4">
                  <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Title Diff</h3>
@@ -331,10 +401,10 @@ export function TaskEditorSheet() {
           </>
         ) : task ? (
           <>
-            <div className="p-6 border-b border-white/40 dark:border-slate-700/50 bg-white/30 dark:bg-slate-950/30 flex-shrink-0 transition-colors">
-              <SheetHeader>
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-950/30 flex-shrink-0 transition-colors">
+              <div>
                 <div className="flex items-center gap-2.5">
-                  <SheetTitle className="text-slate-800 dark:text-slate-100">Edit Task</SheetTitle>
+                  <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Edit Task</h2>
                   {isArchived && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200/50 dark:bg-slate-800 dark:text-slate-405 dark:border-slate-700">
                       Archived
@@ -346,16 +416,100 @@ export function TaskEditorSheet() {
                     </span>
                   )}
                 </div>
-                <SheetDescription className="text-slate-600 dark:text-slate-400">
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                   {isTrashed 
                     ? "This task is in the trash. Restore it to move it back to the active board."
                     : isArchived 
                     ? "This task is archived. Changing fields will save directly to the archived markdown file."
                     : "Changes are saved directly to the frontmatter and markdown body of your local file."}
-                </SheetDescription>
-              </SheetHeader>
+                </p>
+              </div>
             </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 relative z-10 transition-colors">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-6 relative z-10 transition-colors bg-white dark:bg-slate-900">
+            {isCreatingNewTask && (
+              <div className="p-4 bg-indigo-50/50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-xl space-y-3 mb-6">
+                <h4 className="text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5" /> Creation Settings
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Default Target Column</label>
+                    <select 
+                      value={newTaskDefaultColumn || ''}
+                      onChange={(e) => {
+                         const val = e.target.value || null;
+                         setNewTaskDefaultColumn(val);
+                         // If we change it, move the task there now to see it visually
+                         if (val && task) {
+                            const tasksInColumn = tasks.filter(t => t.status === val && t.id !== task.id);
+                            let newOrder = Date.now();
+                            if (tasksInColumn.length > 0) {
+                              if (newTaskDefaultPosition === 'top') {
+                                const minOrder = Math.min(...tasksInColumn.map(t => t.order || 0));
+                                newOrder = minOrder - 1000;
+                              } else {
+                                const maxOrder = Math.max(...tasksInColumn.map(t => t.order || 0));
+                                newOrder = maxOrder + 1000;
+                              }
+                            }
+                            updateTask(task.id, { status: val as any, order: newOrder });
+                         }
+                      }}
+                      className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus-visible:ring-slate-300 dark:text-slate-200"
+                    >
+                      <option value="">Auto (Board Default)</option>
+                      {columns.map(c => (
+                        <option key={c.id} value={c.id}>{c.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Default Position</label>
+                    <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 dark:bg-slate-900/50 dark:border-slate-800">
+                      <button 
+                        onClick={() => {
+                           const pos = 'top';
+                           if (newTaskDefaultPosition === pos) return;
+                           setNewTaskDefaultPosition(pos);
+                           if (task && task.status) {
+                              const tasksInColumn = tasks.filter(t => t.status === task.status && t.id !== task.id);
+                              let newOrder = Date.now();
+                              if (tasksInColumn.length > 0) {
+                                const minOrder = Math.min(...tasksInColumn.map(t => t.order || 0));
+                                newOrder = minOrder - 1000;
+                              }
+                              updateTask(task.id, { order: newOrder });
+                           }
+                        }}
+                        className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-all ${newTaskDefaultPosition === 'top' ? 'bg-white shadow-sm text-indigo-700 dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'}`}
+                      >
+                        Top
+                      </button>
+                      <button 
+                        onClick={() => {
+                           const pos = 'bottom';
+                           if (newTaskDefaultPosition === pos) return;
+                           setNewTaskDefaultPosition(pos);
+                           if (task && task.status) {
+                              const tasksInColumn = tasks.filter(t => t.status === task.status && t.id !== task.id);
+                              let newOrder = Date.now();
+                              if (tasksInColumn.length > 0) {
+                                const maxOrder = Math.max(...tasksInColumn.map(t => t.order || 0));
+                                newOrder = maxOrder + 1000;
+                              }
+                              updateTask(task.id, { order: newOrder });
+                           }
+                        }}
+                        className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-all ${newTaskDefaultPosition === 'bottom' ? 'bg-white shadow-sm text-indigo-700 dark:bg-slate-800 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'}`}
+                      >
+                        Bottom
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-indigo-600/70 dark:text-indigo-400/60 leading-tight">These picks are persistent for future tasks created via shortcuts/palette.</p>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Title</label>
               <Input 
@@ -414,7 +568,7 @@ export function TaskEditorSheet() {
               </div>
             </div>
 
-            <div className="space-y-2 flex flex-col flex-1" data-color-mode={theme}>
+            <div className="space-y-2 flex flex-col" data-color-mode={theme}>
               <div className="flex justify-between items-center bg-slate-500/5 dark:bg-slate-500/10 p-1 rounded-xl border border-white/40 dark:border-slate-800">
                 <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 px-2">Description</label>
                 <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
@@ -437,20 +591,25 @@ export function TaskEditorSheet() {
                 </div>
               </div>
 
-              <div className="rounded-xl overflow-hidden shadow-sm border border-white/60 dark:border-slate-600 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm transition-colors flex flex-col min-h-[380px]">
+              <div 
+                ref={editorContainerRef}
+                className="rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 backdrop-blur-sm transition-colors flex flex-col"
+                style={{ resize: 'vertical', overflow: 'hidden', minHeight: '150px', height: `${editorHeight}px` }}
+              >
                 {editorMode === 'markdown' ? (
                   <MDEditor
                     value={content}
                     onChange={(val) => setContent(val || '')}
                     preview="edit"
-                    height={380}
-                    className="!border-0 !bg-transparent w-full"
+                    height="100%"
+                    visibleDragbar={false}
+                    className="!border-0 !bg-transparent w-full flex-1"
                     textareaProps={{
                       placeholder: "Write task description here (Markdown support)..."
                     }}
                   />
                 ) : (
-                  <div className="flex flex-col h-[380px] flex-1">
+                  <div className="flex flex-col flex-1 h-full">
                     {/* Visual Editor Toolbar */}
                     <div className="flex items-center gap-1.5 p-2 bg-slate-100/50 dark:bg-slate-800/40 border-b border-white/30 dark:border-slate-700/30 flex-wrap">
                       <button
@@ -523,15 +682,14 @@ export function TaskEditorSheet() {
                       contentEditable
                       onInput={handleWysiwygInput}
                       data-placeholder="Write task description here..."
-                      className="flex-1 p-4 outline-none text-slate-800 dark:text-slate-100 bg-transparent overflow-y-auto leading-relaxed focus:ring-0 prose prose-slate dark:prose-invert max-w-none custom-wysiwyg-editor min-h-[320px] empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400/60 dark:empty:before:text-slate-500/60 empty:before:pointer-events-none empty:before:font-normal empty:before:text-sm"
-                      style={{ height: '320px' }}
+                      className="flex-1 p-4 outline-none text-slate-800 dark:text-slate-100 bg-transparent overflow-y-auto leading-relaxed focus:ring-0 prose prose-slate dark:prose-invert max-w-none custom-wysiwyg-editor empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400/60 dark:empty:before:text-slate-500/60 empty:before:pointer-events-none empty:before:font-normal empty:before:text-sm h-full"
                     />
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between pt-4 border-t border-white/20 dark:border-slate-800 mt-6 flex-shrink-0">
+            <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between mt-8 flex-shrink-0">
               {showDeleteConfirm ? (
                 <div className="flex items-center gap-3 bg-rose-50 dark:bg-rose-950/20 p-2 px-3 rounded-lg border border-rose-200/50 dark:border-rose-900/30">
                   <span className="text-xs font-semibold text-rose-800 dark:text-rose-200">Permanently delete?</span>
@@ -581,7 +739,9 @@ export function TaskEditorSheet() {
           </div>
           </>
         ) : null}
-      </SheetContent>
-    </Sheet>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
