@@ -120,14 +120,14 @@ export default function App() {
       }).catch(console.error);
     } else if (backgroundType === 'unsplash') {
       const tags = unsplashTags || 'nature';
-      fetch(`/api/unsplash-image?tags=${encodeURIComponent(tags)}`).then(r => r.json()).then(data => {
+      fetch(`/api/unsplash-image?tags=${encodeURIComponent(tags)}&boardId=${activeBoardId || 'default'}`).then(r => r.json()).then(data => {
         if (active && data.url) setBgUrl(data.url);
       }).catch(console.error);
     } else {
       setBgUrl(null);
     }
     return () => { active = false; };
-  }, [backgroundType, unsplashTags, currentProject]);
+  }, [backgroundType, unsplashTags, activeBoardId, currentProject]);
 
   // Load once, background polling replaced by SSE inside initializeEventSource
   useEffect(() => {

@@ -402,6 +402,7 @@ app.get('/api/bing-image', async (req, res) => {
 app.get('/api/unsplash-image', async (req, res) => {
   try {
     const tags = req.query.tags || 'nature';
+    const boardId = req.query.boardId || '';
     
     // If the user has configured an Unsplash API key, use it for genuine 4K tag-based photos
     if (process.env.UNSPLASH_ACCESS_KEY) {
@@ -421,8 +422,8 @@ app.get('/api/unsplash-image', async (req, res) => {
 
     // Fallback if no API key is provided, or if the API key fails
     // loremflickr has issues with extreme resolutions (padding with red backgrounds)
-    // picsum provides excellent 4k photos, we use the tag string as a consistent seed
-    const seed = encodeURIComponent(tags as string).replace(/[^a-zA-Z0-9]/g, '');
+    // picsum provides excellent 4k photos, we use the tag string and boardId as a consistent seed
+    const seed = encodeURIComponent((tags as string) + (boardId as string)).replace(/[^a-zA-Z0-9]/g, '');
     const url = `https://picsum.photos/seed/${seed}/3840/2160`;
     res.json({ url });
   } catch (error) {

@@ -17,6 +17,8 @@ export interface BoardConfig {
   includeTags: string[];
   excludeTags: string[];
   columns?: ColumnDef[];
+  backgroundType?: 'none' | 'bing' | 'unsplash';
+  unsplashTags?: string;
 }
 
 export interface Task {

@@ -428,13 +428,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setBackgroundType: (type: 'none' | 'bing' | 'unsplash') => {
+    const { activeBoardId, boards, themeColor, theme, defaultSortColumn, unsplashTags, currentProject } = get();
+    let newBoards = boards;
+    if (activeBoardId) {
+      newBoards = boards.map(b => b.id === activeBoardId ? { ...b, backgroundType: type } : b);
+      set({ boards: newBoards });
+    }
     set({ backgroundType: type });
-    saveConfigAPI(get().columns, get().boards, get().themeColor, get().theme, get().defaultSortColumn, type, get().unsplashTags, get().currentProject);
+    saveConfigAPI(get().columns, newBoards, themeColor, theme, defaultSortColumn, type, unsplashTags, currentProject);
   },
 
   setUnsplashTags: (tags: string) => {
+    const { activeBoardId, boards, themeColor, theme, defaultSortColumn, backgroundType, currentProject } = get();
+    let newBoards = boards;
+    if (activeBoardId) {
+      newBoards = boards.map(b => b.id === activeBoardId ? { ...b, unsplashTags: tags } : b);
+      set({ boards: newBoards });
+    }
     set({ unsplashTags: tags });
-    saveConfigAPI(get().columns, get().boards, get().themeColor, get().theme, get().defaultSortColumn, get().backgroundType, tags, get().currentProject);
+    saveConfigAPI(get().columns, newBoards, themeColor, theme, defaultSortColumn, backgroundType, tags, currentProject);
   },
 
   initializeEventSource: () => {
@@ -593,8 +605,12 @@ export const useStore = create<AppState>((set, get) => ({
                   if (!activeBoard) {
                     updates.activeBoardId = bds[0].id;
                     updates.columns = updates.boards[0].columns;
+                    if (updates.boards[0].backgroundType !== undefined) updates.backgroundType = updates.boards[0].backgroundType;
+                    if (updates.boards[0].unsplashTags !== undefined) updates.unsplashTags = updates.boards[0].unsplashTags;
                   } else {
                     updates.columns = activeBoard.columns;
+                    if (activeBoard.backgroundType !== undefined) updates.backgroundType = activeBoard.backgroundType;
+                    if (activeBoard.unsplashTags !== undefined) updates.unsplashTags = activeBoard.unsplashTags;
                   }
                 }
                 set(updates);
@@ -708,8 +724,8 @@ export const useStore = create<AppState>((set, get) => ({
           themeColor: loadedThemeColor!,
           theme: loadedTheme,
           defaultSortColumn: loadedDefaultSortColumn,
-          backgroundType: loadedBackgroundType,
-          unsplashTags: loadedUnsplashTags,
+          backgroundType: activeBoard?.backgroundType !== undefined ? activeBoard.backgroundType : loadedBackgroundType,
+          unsplashTags: activeBoard?.unsplashTags !== undefined ? activeBoard.unsplashTags : loadedUnsplashTags,
           tasks: tasks.sort((a, b) => (a.order || 0) - (b.order || 0)), 
           archivedTasks: archived.sort((a, b) => (a.order || 0) - (b.order || 0)),
           trashedTasks: trashed.sort((a, b) => (a.order || 0) - (b.order || 0)) 
@@ -778,10 +794,15 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setActiveBoardId: (id) => {
-    const { boards, columns } = get();
+    const { boards, columns, backgroundType, unsplashTags } = get();
     const board = boards.find(b => b.id === id);
     if (board) {
-      set({ activeBoardId: id, columns: board.columns || columns });
+      set({ 
+        activeBoardId: id, 
+        columns: board.columns || columns,
+        backgroundType: board.backgroundType !== undefined ? board.backgroundType : backgroundType,
+        unsplashTags: board.unsplashTags !== undefined ? board.unsplashTags : unsplashTags
+      });
     } else {
       set({ activeBoardId: id });
     }
