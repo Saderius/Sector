@@ -94,11 +94,24 @@ export default function App() {
       }
     };
 
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault(); // Prevent file from opening in the window
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault(); // Prevent file from opening in the window
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('open-create-workspace', handleCustomEvents);
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('open-create-workspace', handleCustomEvents);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
     };
   }, [createTask]);
 

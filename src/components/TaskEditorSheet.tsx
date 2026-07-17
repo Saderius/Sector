@@ -574,10 +574,12 @@ export function TaskEditorSheet() {
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Attachments</label>
               <div 
-                onDragOver={(e) => { e.preventDefault(); setIsDraggingFile(true); }}
-                onDragLeave={() => setIsDraggingFile(false)}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingFile(true); }}
+                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingFile(true); }}
+                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingFile(false); }}
                 onDrop={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   setIsDraggingFile(false);
                   const files = Array.from(e.dataTransfer.files);
                   const newAttachments = files.map(f => ({ name: f.name, path: (f as any).path })).filter(f => f.path);
