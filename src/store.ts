@@ -84,7 +84,11 @@ const stringifyFrontmatter = (content: string, data: any) => {
   for (const [key, val] of Object.entries(data)) {
     if (val === undefined || val === null) continue;
     if (Array.isArray(val)) {
-      yaml += `${key}: [${val.map(v => typeof v === 'string' ? `"${v.replace(/"/g, '\\"')}"` : v).join(', ')}]\n`;
+      yaml += `${key}: [${val.map(v => {
+        if (typeof v === 'string') return `"${v.replace(/"/g, '\\"')}"`;
+        if (typeof v === 'object') return JSON.stringify(v);
+        return v;
+      }).join(', ')}]\n`;
     } else if (typeof val === 'object') {
       yaml += `${key}: ${JSON.stringify(val)}\n`;
     } else if (typeof val === 'string') {
@@ -114,6 +118,7 @@ const parseMarkdownText = (filename: string, text: string): Task => {
     const title = parsed.data.title || filename.replace('.md', '');
     const status = parsed.data.status || 'To Do';
     const tags = parsed.data.tags || [];
+    const attachments = parsed.data.attachments || [];
     const order = parsed.data.order !== undefined ? parsed.data.order : Date.now();
     const archived = parsed.data.archived || false;
     
@@ -122,6 +127,7 @@ const parseMarkdownText = (filename: string, text: string): Task => {
       title,
       status: status as TaskStatus,
       tags,
+      attachments,
       order,
       content: cleanContent(parsed.content),
       ...(archived && { archived: true })
@@ -187,6 +193,7 @@ const writeMarkdownAPI = async (task: Task, project: string) => {
       title: task.title,
       status: task.status,
       tags: task.tags,
+      attachments: task.attachments,
       order: task.order,
       archived: (task as any).archived,
       trashed: (task as any).trashed
@@ -197,6 +204,7 @@ const writeMarkdownAPI = async (task: Task, project: string) => {
       title: task.title,
       status: task.status,
       tags: task.tags,
+      attachments: task.attachments,
       order: task.order,
       archived: (task as any).archived,
       trashed: (task as any).trashed

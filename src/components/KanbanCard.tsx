@@ -6,6 +6,7 @@ import { Task, ColumnSize } from '../types';
 import { useStore } from '../store';
 import { MouseEventHandler } from 'react';
 import { motion } from 'motion/react';
+import { Paperclip } from 'lucide-react';
 
 export function KanbanCard({ task, size = 'medium', isOverlay = false }: { task: Task, size?: ColumnSize, isOverlay?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -66,13 +67,19 @@ export function KanbanCard({ task, size = 'medium', isOverlay = false }: { task:
                </div>
             )}
 
-            {task.tags?.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {task.tags.map(t => (
+            {(task.tags?.length > 0 || (task.attachments && task.attachments.length > 0)) && (
+              <div className="flex flex-wrap items-center gap-1 mt-1">
+                {task.tags?.map(t => (
                   <Badge key={t} variant="secondary" className="text-xs px-1.5 py-0 font-normal bg-white/50 dark:bg-slate-700/50 backdrop-blur-md text-slate-700 dark:text-slate-300 border-white/40 dark:border-slate-600">
                     {t}
                   </Badge>
                 ))}
+                {task.attachments && task.attachments.length > 0 && (
+                  <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400 ml-1" title={`${task.attachments.length} attachment(s)`}>
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-medium">{task.attachments.length}</span>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

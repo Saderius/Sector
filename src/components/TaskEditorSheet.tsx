@@ -122,9 +122,11 @@ export function TaskEditorSheet() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [tags, setTags] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<{name: string, path: string}[]>([]);
   const [newTag, setNewTag] = useState('');
   const [editorMode, setEditorMode] = useState<'markdown' | 'wysiwyg'>('markdown');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   
   const [editorHeight, setEditorHeight] = useState(() => {
     const saved = localStorage.getItem('task_editor_height');
@@ -255,6 +257,7 @@ export function TaskEditorSheet() {
       setTitle(task.title);
       setContent(task.content);
       setTags(task.tags || []);
+      setAttachments(task.attachments || []);
       setShowDeleteConfirm(false);
       lastTaskIdRef.current = selectedTaskId;
       setTimeout(() => {
@@ -268,11 +271,11 @@ export function TaskEditorSheet() {
     if (!isLoadedRef.current || !task) return;
 
     const delayDebounceFn = setTimeout(() => {
-      updateTask(task.id, { title, content, tags });
+      updateTask(task.id, { title, content, tags, attachments });
     }, 500); // 500ms debounce
 
     return () => clearTimeout(delayDebounceFn);
-  }, [title, content, tags, task?.id]);
+  }, [title, content, tags, attachments, task?.id]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -299,7 +302,7 @@ export function TaskEditorSheet() {
 
   const handleClose = () => {
     if (task && isLoadedRef.current) {
-      updateTask(task.id, { title, content, tags });
+      updateTask(task.id, { title, content, tags, attachments });
     }
     setSelectedTaskId(null);
     setTimeout(() => setIsCreatingNewTask(false), 200);
@@ -565,6 +568,62 @@ export function TaskEditorSheet() {
                     </button>
                   </Badge>
                 ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Attachments</label>
+              <div 
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingFile(true); }}
+                onDragLeave={() => setIsDraggingFile(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingFile(false);
+                  const files = Array.from(e.dataTransfer.files);
+                  const newAttachments = files.map(f => ({ name: f.name, path: (f as any).path })).filter(f => f.path);
+                  if (newAttachments.length > 0) {
+                    setAttachments(prev => {
+                      const existingPaths = new Set(prev.map(p => p.path));
+                      return [...prev, ...newAttachments.filter(a => !existingPaths.has(a.path))];
+                    });
+                  }
+                }}
+                className={`w-full min-h-[60px] border-2 border-dashed rounded-lg flex flex-col items-center justify-center p-4 transition-colors ${
+                  isDraggingFile 
+                    ? 'border-indigo-400 bg-indigo-50/50 dark:border-indigo-500/50 dark:bg-indigo-900/20' 
+                    : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                }`}
+              >
+                {attachments.length > 0 ? (
+                  <div className="w-full flex flex-col gap-2">
+                    {attachments.map((att, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-white dark:bg-slate-800 p-2 rounded-md border border-slate-200 dark:border-slate-700 shadow-sm group">
+                        <button 
+                          className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline truncate text-left max-w-[85%]" 
+                          title={att.path}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if ((window as any).electronAPI?.openFileInExplorer) {
+                              (window as any).electronAPI.openFileInExplorer(att.path);
+                            }
+                          }}
+                        >
+                          {att.name}
+                        </button>
+                        <button 
+                          onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
+                          className="text-slate-400 hover:text-rose-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Remove link"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <p className="text-xs text-center mt-2 text-slate-400 dark:text-slate-500 font-medium">Drag and drop more files here to link</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Drag and drop files from your PC here to link them</p>
+                )}
               </div>
             </div>
 

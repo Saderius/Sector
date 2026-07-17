@@ -49,6 +49,16 @@ ipcMain.handle('select-directory', async () => {
   }
 });
 
+// Handle opening file in explorer
+ipcMain.handle('open-file-in-explorer', async (event, filePath) => {
+  try {
+    const { shell } = require('electron');
+    shell.showItemInFolder(filePath);
+  } catch (err) {
+    console.error("[Electron main.cjs]: open-file-in-explorer error:", err);
+  }
+});
+
 function startServerAndApp() {
   const isDev = !app.isPackaged;
   

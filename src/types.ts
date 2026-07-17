@@ -21,6 +21,11 @@ export interface BoardConfig {
   unsplashTags?: string;
 }
 
+export interface FileAttachment {
+  name: string;
+  path: string;
+}
+
 export interface Task {
   id: string; // filename or unique id
   title: string;
@@ -31,4 +36,5 @@ export interface Task {
   archived?: boolean;
   trashed?: boolean;
   pendingExternalChanges?: Task; // Holds incoming changes from the agent
+  attachments?: FileAttachment[];
 }
